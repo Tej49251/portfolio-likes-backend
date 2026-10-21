@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Environment secrets — NEVER commit these
+.env
+local-admin-server/.env
+
+# Build output
+dist/
+coverage/
+
+# Logs
+*.log
+logs/
+
+# Editor
+.vscode/
+.idea/
+*.suo
+.DS_Store
+
+# Render build cache
+.render-buildpacks.json
