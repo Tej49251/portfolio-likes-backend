@@ -1,34 +1,38 @@
 /**
  * src/controllers/adminController.js
  *
- * Admin API controller — all endpoints protected by adminAuth middleware.
- * These endpoints are NEVER called from the public portfolio frontend.
- * They are only called from the local admin dashboard running at 127.0.0.1.
+ * Admin API — all endpoints require Authorization: Bearer <ADMIN_SECRET>
+ * Never called from the public portfolio frontend.
  */
 
 'use strict';
 
-import { getRecentSubmissions } from '../repositories/submissionRepository.js';
+import { getStats, getRecentVisits, getRecentLikes } from '../repositories/analyticsRepository.js';
 import { getPool } from '../config/database.js';
 import logger from '../config/logger.js';
 
 /**
- * GET /admin/submissions
- *
- * Returns the most recent submissions (default 100, max 500).
- * Query param: ?limit=N
+ * GET /admin/analytics
+ * Returns stats + recent visits + recent likes in one response.
+ * Query param: ?limit=N (default 100, max 500)
  */
-export async function listSubmissions(req, res, next) {
+export async function getAnalytics(req, res, next) {
   try {
     const limit = parseInt(req.query.limit, 10) || 100;
     const db = getPool();
-    const rows = await getRecentSubmissions(db, limit);
 
-    logger.info('Admin: submissions listed', { count: rows.length });
+    const [stats, recentVisits, recentLikes] = await Promise.all([
+      getStats(db),
+      getRecentVisits(db, limit),
+      getRecentLikes(db, limit),
+    ]);
 
-    // Render names as plain text — safe since we validate on insert.
-    // The admin dashboard must escape HTML when rendering these strings.
-    res.status(200).json({ submissions: rows });
+    logger.info('Admin: analytics fetched', {
+      visits: recentVisits.length,
+      likes: recentLikes.length,
+    });
+
+    res.status(200).json({ stats, recentVisits, recentLikes });
   } catch (err) {
     next(err);
   }
