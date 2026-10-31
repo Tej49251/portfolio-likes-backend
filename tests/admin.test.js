@@ -36,18 +36,16 @@ beforeAll(async () => {
   const { createApp } = await import('../src/app.js');
   app = createApp();
 
-  // Mock DB: stats query + visits + likes
+  // Mock DB: stats + topSections + logFeed (UNION ALL query)
   mockDb.query.mockImplementation((sql) => {
     if (sql.includes('total_visits')) {
-      return Promise.resolve({ rows: [{ total_visits: 50, unique_visitors: 30, total_likes: 5, today_visits: 3, today_likes: 1 }] });
+      return Promise.resolve({ rows: [{ total_visits: 50, unique_visitors: 30, total_likes: 5, total_section_views: 10, today_visits: 3, today_likes: 1 }] });
     }
-    if (sql.includes('FROM visits')) {
-      return Promise.resolve({ rows: [{ id: 1, ip: '1.2.3.4', user_agent: 'Chrome / Windows', visited_at: new Date() }] });
+    if (sql.includes('GROUP BY section')) {
+      return Promise.resolve({ rows: [{ section: 'projects', views: '8' }] });
     }
-    if (sql.includes('FROM likes_log')) {
-      return Promise.resolve({ rows: [{ id: 1, ip: '1.2.3.4', liked_at: new Date() }] });
-    }
-    return Promise.resolve({ rows: [] });
+    // logFeed UNION ALL query
+    return Promise.resolve({ rows: [{ type: 'VISIT', id: 1, ip_hash: 'abc123', ts: new Date(), browser: 'Chrome', os: 'Windows', screen: 'Desktop', referrer: 'linkedin.com', timezone: 'Asia/Kolkata', section: null }] });
   });
 });
 
@@ -79,8 +77,8 @@ describe('GET /admin/analytics — authentication', () => {
       .set('Authorization', `Bearer ${ADMIN_SECRET}`);
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('stats');
-    expect(res.body).toHaveProperty('recentVisits');
-    expect(res.body).toHaveProperty('recentLikes');
+    expect(res.body).toHaveProperty('logFeed');
+    expect(res.body).toHaveProperty('topSections');
   });
 
   it('stats contain expected keys', async () => {
@@ -93,6 +91,7 @@ describe('GET /admin/analytics — authentication', () => {
     expect(stats).toHaveProperty('totalLikes');
     expect(stats).toHaveProperty('todayVisits');
     expect(stats).toHaveProperty('todayLikes');
+    expect(stats).toHaveProperty('totalSectionViews');
   });
 
   it('does not expose admin secret in response', async () => {

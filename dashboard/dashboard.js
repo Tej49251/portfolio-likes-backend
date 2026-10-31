@@ -1,218 +1,179 @@
 /**
  * dashboard/dashboard.js
  *
- * Analytics dashboard — fetches data through the local proxy (/proxy/analytics).
- * The ADMIN_SECRET is held server-side by local-admin-server/server.js.
- * This script never handles or stores the secret.
- *
- * Security: all data is rendered with textContent — never innerHTML.
+ * Terminal-style analytics log viewer.
+ * Fetches from /proxy/analytics (local proxy → Render /admin/analytics).
+ * All rendering uses textContent — never innerHTML. XSS-safe.
  */
 
 'use strict';
 
-// ── State ──────────────────────────────────────────────────────────────────
-let cachedData     = null;
-let currentTab     = 'overview';
-let autoTimer      = null;
-
 // ── DOM refs ───────────────────────────────────────────────────────────────
-const statusBadge   = document.getElementById('status-badge');
+const statusText    = document.getElementById('status-text');
+const lastUpdated   = document.getElementById('last-updated');
 const refreshBtn    = document.getElementById('refresh-btn');
-const lastUpdatedEl = document.getElementById('last-updated');
 const limitSelect   = document.getElementById('limit-select');
 const autoCb        = document.getElementById('auto-cb');
+const statBar       = document.getElementById('stat-bar');
+const sectionsBar   = document.getElementById('sections-bar');
 const stateLoading  = document.getElementById('state-loading');
 const stateError    = document.getElementById('state-error');
-const errorMsg      = document.getElementById('error-msg');
-const pageTitleEl   = document.getElementById('page-title');
+const errMsg        = document.getElementById('err-msg');
+const logFeed       = document.getElementById('log-feed');
 
-// ── Tab switching ──────────────────────────────────────────────────────────
-function switchTab(tab, el) {
-  if (el) {
-    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-    el.classList.add('active');
-  }
-  document.querySelectorAll('.tab-content').forEach(t => t.style.display = 'none');
-  const el2 = document.getElementById(`tab-${tab}`);
-  if (el2) el2.style.display = 'flex';
-  currentTab = tab;
-
-  const titles = { overview: 'Overview', visitors: 'Visitors', likes: 'Likes' };
-  pageTitleEl.textContent = titles[tab] || 'Analytics';
-
-  if (cachedData) renderTab(tab, cachedData);
-}
+let autoTimer = null;
 
 // ── Load data ──────────────────────────────────────────────────────────────
 async function loadData() {
-  const limit = limitSelect.value || '100';
+  const limit = limitSelect.value || '200';
   refreshBtn.disabled = true;
-  setStatus('loading', 'Loading…');
+  setStatus('loading', 'fetching analytics...');
   stateLoading.style.display = 'flex';
   stateError.style.display   = 'none';
-  document.querySelectorAll('.tab-content').forEach(t => t.style.display = 'none');
+  logFeed.innerHTML           = '';
 
   try {
     const res = await fetch(`/proxy/analytics?limit=${encodeURIComponent(limit)}`);
 
     if (!res.ok) {
-      let msg = `Error ${res.status}`;
-      try { const j = await res.json(); if (typeof j.message === 'string') msg = j.message; } catch {}
+      let msg = `HTTP ${res.status}`;
+      try { const j = await res.json(); if (j.message) msg = j.message; } catch {}
       throw new Error(msg);
     }
 
-    cachedData = await res.json();
+    const data = await res.json();
     stateLoading.style.display = 'none';
-    renderTab(currentTab, cachedData);
-    setStatus('ok', 'Live');
-    lastUpdatedEl.textContent = 'Updated ' + new Date().toLocaleTimeString();
+
+    renderStats(data.stats || {});
+    renderTopSections(data.topSections || []);
+    renderLogFeed(data.logFeed || []);
+
+    setStatus('ok', `loaded ${(data.logFeed || []).length} events`);
+    lastUpdated.textContent = formatTS(new Date().toISOString());
   } catch (err) {
     stateLoading.style.display = 'none';
     stateError.style.display   = 'flex';
-    errorMsg.textContent = err.message || 'Failed to load analytics.';
-    setStatus('error', 'Error');
+    errMsg.textContent          = err.message || 'connection failed';
+    setStatus('error', 'error — see above');
   } finally {
     refreshBtn.disabled = false;
   }
 }
 
-// ── Render tab ─────────────────────────────────────────────────────────────
-function renderTab(tab, data) {
-  const el = document.getElementById(`tab-${tab}`);
-  if (!el) return;
-  el.style.display = 'flex';
-
-  if (tab === 'overview')  renderOverview(data);
-  if (tab === 'visitors')  renderVisitors(data.recentVisits || []);
-  if (tab === 'likes')     renderLikes(data.recentLikes || []);
-}
-
-// ── Overview ───────────────────────────────────────────────────────────────
-function renderOverview(data) {
-  const s = data.stats || {};
-  setText('s-total-visits', fmt(s.totalVisits));
-  setText('s-today-visits', `${fmt(s.todayVisits)} today`);
-  setText('s-unique',       fmt(s.uniqueVisitors));
-  setText('s-total-likes',  fmt(s.totalLikes));
-  setText('s-today-likes',  `${fmt(s.todayLikes)} today`);
+// ── Stat bar ───────────────────────────────────────────────────────────────
+function renderStats(s) {
+  setText('s-visits',  fmt(s.totalVisits));
+  setText('s-unique',  fmt(s.uniqueVisitors));
+  setText('s-likes',   fmt(s.totalLikes));
+  setText('s-sections',fmt(s.totalSectionViews));
+  setText('s-today',   `${fmt(s.todayVisits)}v / ${fmt(s.todayLikes)}l`);
 
   const rate = s.totalVisits > 0
-    ? ((s.totalLikes / s.totalVisits) * 100).toFixed(1)
-    : '0.0';
-  setText('s-like-rate', rate);
-
-  const visits = (data.recentVisits || []).slice(0, 10);
-  const likes  = (data.recentLikes  || []).slice(0, 10);
-
-  setText('ov-visit-count', visits.length + ' shown');
-  setText('ov-like-count',  likes.length  + ' shown');
-
-  renderVisitRows('ov-visits-body', visits, true);
-  renderLikeRows('ov-likes-body', likes, true);
+    ? ((s.totalLikes / s.totalVisits) * 100).toFixed(1) + '%'
+    : '0.0%';
+  setText('s-rate', rate);
+  statBar.style.display = 'flex';
 }
 
-// ── Visitors tab ────────────────────────────────────────────────────────────
-function renderVisitors(visits) {
-  setText('vis-count', visits.length + ' records');
-  renderVisitRows('vis-body', visits, false);
+// ── Top sections ───────────────────────────────────────────────────────────
+function renderTopSections(sections) {
+  const el = document.getElementById('top-sections-list');
+  if (!el) return;
+  el.textContent = '';
+
+  sections.forEach((s) => {
+    const span = document.createElement('span');
+    span.className = 'section-tag';
+    const name  = document.createTextNode(s.section);
+    const count = document.createElement('span');
+    count.className = 'section-count';
+    count.textContent = `(${s.views})`;
+    span.appendChild(name);
+    span.appendChild(document.createTextNode(' '));
+    span.appendChild(count);
+    el.appendChild(span);
+  });
+
+  sectionsBar.style.display = sections.length ? 'block' : 'none';
 }
 
-// ── Likes tab ──────────────────────────────────────────────────────────────
-function renderLikes(likes) {
-  setText('like-count', likes.length + ' records');
-  renderLikeRows('like-body', likes, false);
-}
-
-// ── Row renderers ──────────────────────────────────────────────────────────
-function renderVisitRows(tbodyId, rows, compact) {
-  const tbody = document.getElementById(tbodyId);
-  if (!tbody) return;
-  tbody.innerHTML = '';
-
+// ── Log feed ───────────────────────────────────────────────────────────────
+function renderLogFeed(rows) {
   if (rows.length === 0) {
-    const tr = document.createElement('tr');
-    tr.className = 'empty-row';
-    const td = document.createElement('td');
-    td.setAttribute('colspan', compact ? '3' : '4');
-    td.textContent = 'No visits yet';
-    tr.appendChild(td);
-    tbody.appendChild(tr);
+    const p = document.createElement('p');
+    p.className = 'log-empty';
+    p.textContent = 'no events recorded yet — visit the portfolio to generate data';
+    logFeed.appendChild(p);
     return;
   }
 
-  rows.forEach((row, i) => {
-    const tr = document.createElement('tr');
-
-    if (!compact) {
-      const tdId = document.createElement('td');
-      tdId.className = 'cell-id';
-      tdId.textContent = String(row.id);
-      tr.appendChild(tdId);
-    }
-
-    const tdIp = document.createElement('td');
-    tdIp.className = 'cell-ip';
-    tdIp.textContent = row.ip || '—';
-    tr.appendChild(tdIp);
-
-    const tdUa = document.createElement('td');
-    tdUa.className = 'cell-ua';
-    tdUa.textContent = row.user_agent || '—';
-    tr.appendChild(tdUa);
-
-    const tdTime = document.createElement('td');
-    tdTime.className = 'cell-time';
-    tdTime.textContent = formatUTC(row.visited_at);
-    tr.appendChild(tdTime);
-
-    tbody.appendChild(tr);
-  });
+  const frag = document.createDocumentFragment();
+  rows.forEach(row => frag.appendChild(buildLogLine(row)));
+  logFeed.appendChild(frag);
 }
 
-function renderLikeRows(tbodyId, rows, compact) {
-  const tbody = document.getElementById(tbodyId);
-  if (!tbody) return;
-  tbody.innerHTML = '';
+function buildLogLine(row) {
+  const type = (row.type || '').toUpperCase(); // VISIT | LIKE | SECTION
 
-  if (rows.length === 0) {
-    const tr = document.createElement('tr');
-    tr.className = 'empty-row';
-    const td = document.createElement('td');
-    td.setAttribute('colspan', compact ? '2' : '3');
-    td.textContent = 'No likes recorded yet';
-    tr.appendChild(td);
-    tbody.appendChild(tr);
-    return;
+  const line = document.createElement('div');
+  line.className = `log-line type-${type.toLowerCase()}`;
+
+  // Timestamp
+  const ts = document.createElement('span');
+  ts.className = 'log-ts';
+  ts.textContent = formatTS(row.ts);
+  line.appendChild(ts);
+
+  // Type badge
+  const badge = document.createElement('span');
+  badge.className = 'log-type';
+  badge.textContent = `[${padR(type, 7)}]`;
+  line.appendChild(badge);
+
+  // IP hash
+  const hash = document.createElement('span');
+  hash.className = 'log-hash';
+  hash.textContent = `hash=${row.ip_hash || 'unknown'}`;
+  line.appendChild(hash);
+
+  // Data fields
+  const data = document.createElement('span');
+  data.className = 'log-data';
+
+  if (type === 'VISIT') {
+    if (row.browser) data.appendChild(kv('browser', row.browser, true));
+    if (row.os)      data.appendChild(kv('os', row.os));
+    if (row.screen)  data.appendChild(kv('screen', row.screen));
+    if (row.referrer)data.appendChild(kv('ref', row.referrer));
+    if (row.timezone)data.appendChild(kv('tz', row.timezone));
+  } else if (type === 'SECTION') {
+    if (row.section) data.appendChild(kv('section', row.section, true));
+  } else if (type === 'LIKE') {
+    data.appendChild(kv('event', '❤️ liked'));
   }
 
-  rows.forEach((row) => {
-    const tr = document.createElement('tr');
-
-    if (!compact) {
-      const tdId = document.createElement('td');
-      tdId.className = 'cell-id';
-      tdId.textContent = String(row.id);
-      tr.appendChild(tdId);
-    }
-
-    const tdIp = document.createElement('td');
-    tdIp.className = 'cell-ip';
-    tdIp.textContent = row.ip || '—';
-    tr.appendChild(tdIp);
-
-    const tdTime = document.createElement('td');
-    tdTime.className = 'cell-time';
-    tdTime.textContent = formatUTC(row.liked_at);
-    tr.appendChild(tdTime);
-
-    tbody.appendChild(tr);
-  });
+  line.appendChild(data);
+  return line;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-function setStatus(type, label) {
-  statusBadge.textContent = label;
-  statusBadge.className = `status-badge status-${type}`;
+function kv(key, val, highlight = false) {
+  const span = document.createElement('span');
+  span.className = 'kv';
+  const k = document.createElement('span');
+  k.className = 'k';
+  k.textContent = key + '=';
+  const v = document.createElement('span');
+  v.className = highlight ? 'v hi' : 'v';
+  v.textContent = val;
+  span.appendChild(k);
+  span.appendChild(v);
+  return span;
+}
+
+function setStatus(type, msg) {
+  statusText.className = `status-${type}`;
+  statusText.textContent = msg;
 }
 
 function setText(id, val) {
@@ -221,28 +182,29 @@ function setText(id, val) {
 }
 
 function fmt(n) {
-  if (n === undefined || n === null) return '—';
+  if (n === undefined || n === null) return '0';
   return Number(n).toLocaleString();
 }
 
-function formatUTC(isoStr) {
-  if (!isoStr) return '—';
+function padR(str, len) {
+  return str.padEnd(len, ' ');
+}
+
+function formatTS(iso) {
+  if (!iso) return '—';
   try {
-    const d = new Date(isoStr);
-    const pad = (n) => String(n).padStart(2, '0');
-    return `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())} `
-         + `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())} UTC`;
-  } catch { return isoStr; }
+    const d = new Date(iso);
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getUTCFullYear()}-${p(d.getUTCMonth()+1)}-${p(d.getUTCDate())} `
+         + `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())} UTC`;
+  } catch { return iso; }
 }
 
 // ── Auto-refresh ───────────────────────────────────────────────────────────
 function toggleAuto() {
   clearInterval(autoTimer);
-  if (autoCb.checked) {
-    autoTimer = setInterval(loadData, 30_000);
-  }
+  if (autoCb.checked) autoTimer = setInterval(loadData, 30_000);
 }
 
 // ── Boot ───────────────────────────────────────────────────────────────────
-switchTab('overview', null);
 loadData();

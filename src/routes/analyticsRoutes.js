@@ -1,42 +1,45 @@
 /**
  * src/routes/analyticsRoutes.js
  *
- * Public analytics routes — called silently from the portfolio frontend.
- * Rate limited to prevent abuse. No auth required (the IP is the payload).
+ * Public analytics routes — silently called by the portfolio frontend.
+ * Always return 200 regardless of outcome.
  */
 
 'use strict';
 
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
-import { recordVisit, recordLike } from '../controllers/analyticsController.js';
+import { recordVisit, recordLike, recordSection } from '../controllers/analyticsController.js';
+
+const silent200 = (_req, res) => res.status(200).json({ ok: true });
 
 export function createAnalyticsRoutes() {
   const router = Router();
 
-  // Visit: generous limit — one per page load, but some visitors refresh often
   const visitLimiter = rateLimit({
-    windowMs: 5 * 60 * 1000,  // 5 minutes
-    max: 10,
-    standardHeaders: 'draft-7',
-    legacyHeaders: false,
+    windowMs: 5 * 60 * 1000, max: 10,
+    standardHeaders: 'draft-7', legacyHeaders: false,
     keyGenerator: (req) => req.ip,
-    // Always 200 even when rate limited — analytics must not surface errors
-    handler: (_req, res) => res.status(200).json({ ok: true }),
+    handler: silent200,
   });
 
-  // Like: stricter — shouldn't fire more than a few times
   const likeLimiter = rateLimit({
-    windowMs: 10 * 60 * 1000, // 10 minutes
-    max: 5,
-    standardHeaders: 'draft-7',
-    legacyHeaders: false,
+    windowMs: 10 * 60 * 1000, max: 5,
+    standardHeaders: 'draft-7', legacyHeaders: false,
     keyGenerator: (req) => req.ip,
-    handler: (_req, res) => res.status(200).json({ ok: true }),
+    handler: silent200,
   });
 
-  router.post('/visit', visitLimiter, recordVisit);
-  router.post('/like',  likeLimiter,  recordLike);
+  const sectionLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000, max: 20, // 20 section events per minute per IP
+    standardHeaders: 'draft-7', legacyHeaders: false,
+    keyGenerator: (req) => req.ip,
+    handler: silent200,
+  });
+
+  router.post('/visit',   visitLimiter,   recordVisit);
+  router.post('/like',    likeLimiter,    recordLike);
+  router.post('/section', sectionLimiter, recordSection);
 
   return router;
 }

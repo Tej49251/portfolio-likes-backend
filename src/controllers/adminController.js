@@ -1,38 +1,38 @@
 /**
  * src/controllers/adminController.js
  *
- * Admin API — all endpoints require Authorization: Bearer <ADMIN_SECRET>
- * Never called from the public portfolio frontend.
+ * Admin API — protected by adminAuth middleware.
+ * Returns full analytics: stats, top sections, and a merged chronological log feed.
  */
 
 'use strict';
 
-import { getStats, getRecentVisits, getRecentLikes } from '../repositories/analyticsRepository.js';
+import {
+  getStats,
+  getTopSections,
+  getLogFeed,
+} from '../repositories/analyticsRepository.js';
 import { getPool } from '../config/database.js';
 import logger from '../config/logger.js';
 
 /**
- * GET /admin/analytics
- * Returns stats + recent visits + recent likes in one response.
- * Query param: ?limit=N (default 100, max 500)
+ * GET /admin/analytics?limit=N
+ * Returns: { stats, topSections, logFeed }
  */
 export async function getAnalytics(req, res, next) {
   try {
-    const limit = parseInt(req.query.limit, 10) || 100;
+    const limit = parseInt(req.query.limit, 10) || 200;
     const db = getPool();
 
-    const [stats, recentVisits, recentLikes] = await Promise.all([
+    const [stats, topSections, logFeed] = await Promise.all([
       getStats(db),
-      getRecentVisits(db, limit),
-      getRecentLikes(db, limit),
+      getTopSections(db),
+      getLogFeed(db, limit),
     ]);
 
-    logger.info('Admin: analytics fetched', {
-      visits: recentVisits.length,
-      likes: recentLikes.length,
-    });
+    logger.info('Admin: analytics fetched', { logEntries: logFeed.length });
 
-    res.status(200).json({ stats, recentVisits, recentLikes });
+    res.status(200).json({ stats, topSections, logFeed });
   } catch (err) {
     next(err);
   }

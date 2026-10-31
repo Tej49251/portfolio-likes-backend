@@ -32,11 +32,15 @@ const config = {
   databaseUrl: requireEnv('DATABASE_URL'),
 
   // Exact origin of the deployed Firebase portfolio
-  // Example: https://portfolio-tejas-4c9f7.web.app
   allowedOrigin: requireEnv('ALLOWED_ORIGIN'),
 
   // Admin secret — never expose this to the public API or frontend
   adminSecret: requireEnv('ADMIN_SECRET'),
+
+  // Salt used to HMAC-hash IP addresses before storage (privacy-by-design).
+  // If not set, a runtime-only random salt is used — unique visitors
+  // are still countable within a session but won't persist across restarts.
+  ipSalt: optionalEnv('IP_SALT', null),
 
   get isProduction() {
     return this.nodeEnv === 'production';

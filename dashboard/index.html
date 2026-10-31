@@ -3,186 +3,84 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Portfolio Analytics — Tejas Darunte</title>
+  <title>analytics.log — Tejas Darunte</title>
   <meta name="robots" content="noindex, nofollow" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/dashboard.css" />
 </head>
 <body>
-  <div class="root">
+  <div class="terminal">
 
-    <!-- ── Sidebar ─────────────────────────────────────────────────── -->
-    <aside class="sidebar">
-      <div class="sidebar-brand">
-        <div class="avatar">T</div>
-        <div>
-          <div class="brand-name">Tejas Darunte</div>
-          <div class="brand-sub">Portfolio Analytics</div>
-        </div>
+    <!-- ── Header bar ───────────────────────────────────────────── -->
+    <div class="term-header">
+      <div class="term-dots">
+        <span class="dot dot-red"></span>
+        <span class="dot dot-yellow"></span>
+        <span class="dot dot-green"></span>
       </div>
-
-      <nav class="sidebar-nav">
-        <a href="#" class="nav-item active" data-tab="overview" onclick="switchTab('overview', this)">
-          <span class="nav-icon">📊</span> Overview
-        </a>
-        <a href="#" class="nav-item" data-tab="visitors" onclick="switchTab('visitors', this)">
-          <span class="nav-icon">👀</span> Visitors
-        </a>
-        <a href="#" class="nav-item" data-tab="likes" onclick="switchTab('likes', this)">
-          <span class="nav-icon">❤️</span> Likes
-        </a>
-      </nav>
-
-      <div class="sidebar-footer">
-        <div class="local-badge">🔒 127.0.0.1 only</div>
-        <div id="last-updated" class="last-updated">—</div>
+      <div class="term-title">tejas@portfolio — analytics.log</div>
+      <div class="term-controls">
+        <select id="limit-select" class="term-select" onchange="loadData()">
+          <option value="100">last 100</option>
+          <option value="200" selected>last 200</option>
+          <option value="500">last 500</option>
+        </select>
+        <label class="term-check">
+          <input type="checkbox" id="auto-cb" onchange="toggleAuto()" /> auto:30s
+        </label>
+        <button id="refresh-btn" class="term-btn" onclick="loadData()">↻ refresh</button>
       </div>
-    </aside>
+    </div>
 
-    <!-- ── Main ───────────────────────────────────────────────────── -->
-    <div class="main">
+    <!-- ── Status line ──────────────────────────────────────────── -->
+    <div class="term-status">
+      <span class="status-prompt">$</span>
+      <span id="status-text" class="status-idle">idle — press refresh to load</span>
+      <span id="last-updated" class="status-ts"></span>
+    </div>
 
-      <!-- Top bar -->
-      <header class="topbar">
-        <div class="topbar-left">
-          <h1 id="page-title" class="page-title">Overview</h1>
-          <span id="status-badge" class="status-badge status-idle">Idle</span>
-        </div>
-        <div class="topbar-right">
-          <select id="limit-select" class="select-input" onchange="loadData()">
-            <option value="50">Last 50</option>
-            <option value="100" selected>Last 100</option>
-            <option value="200">Last 200</option>
-            <option value="500">Last 500</option>
-          </select>
-          <label class="auto-refresh">
-            <input type="checkbox" id="auto-cb" onchange="toggleAuto()" />
-            Auto (30s)
-          </label>
-          <button id="refresh-btn" class="btn btn-primary" onclick="loadData()">
-            <span id="refresh-icon">↻</span> Refresh
-          </button>
-        </div>
-      </header>
+    <!-- ── Stat bar ─────────────────────────────────────────────── -->
+    <div id="stat-bar" class="stat-bar" style="display:none">
+      <span class="stat-item"><span class="stat-k">VISITS</span><span class="stat-v" id="s-visits">0</span></span>
+      <span class="stat-sep">│</span>
+      <span class="stat-item"><span class="stat-k">UNIQUE</span><span class="stat-v" id="s-unique">0</span></span>
+      <span class="stat-sep">│</span>
+      <span class="stat-item"><span class="stat-k">LIKES</span><span class="stat-v liked" id="s-likes">0</span></span>
+      <span class="stat-sep">│</span>
+      <span class="stat-item"><span class="stat-k">SECTIONS</span><span class="stat-v" id="s-sections">0</span></span>
+      <span class="stat-sep">│</span>
+      <span class="stat-item"><span class="stat-k">TODAY↑</span><span class="stat-v green" id="s-today">0v / 0l</span></span>
+      <span class="stat-sep">│</span>
+      <span class="stat-item"><span class="stat-k">RATE</span><span class="stat-v" id="s-rate">0.0%</span></span>
+    </div>
 
-      <!-- State: loading -->
-      <div id="state-loading" class="state-view" style="display:none">
-        <div class="spinner"></div>
-        <p class="state-title">Loading analytics…</p>
-        <p class="state-hint">If Render is waking from sleep, this may take 30–60 seconds.</p>
-      </div>
+    <!-- ── Top sections bar ─────────────────────────────────────── -->
+    <div id="sections-bar" class="sections-bar" style="display:none">
+      <span class="stat-k">TOP SECTIONS → </span>
+      <span id="top-sections-list"></span>
+    </div>
 
-      <!-- State: error -->
-      <div id="state-error" class="state-view" style="display:none">
-        <div class="state-icon">⚠️</div>
-        <p class="state-title" id="error-msg">Something went wrong.</p>
-        <button class="btn" onclick="loadData()">Retry</button>
-      </div>
+    <!-- ── Loading / Error ─────────────────────────────────────── -->
+    <div id="state-loading" class="state-line" style="display:none">
+      <span class="blink">▮</span> <span class="dim">connecting to render... (cold start may take 30–60s)</span>
+    </div>
+    <div id="state-error" class="state-line err" style="display:none">
+      <span class="err-icon">✗</span> <span id="err-msg"></span>
+      <button class="term-btn-inline" onclick="loadData()">retry</button>
+    </div>
 
-      <!-- ── Overview tab ──────────────────────────────────────────── -->
-      <div id="tab-overview" class="tab-content">
-        <div class="stats-grid">
-          <div class="stat-card stat-blue">
-            <div class="stat-label">Total Visits</div>
-            <div class="stat-value" id="s-total-visits">—</div>
-            <div class="stat-sub" id="s-today-visits">— today</div>
-          </div>
-          <div class="stat-card stat-purple">
-            <div class="stat-label">Unique Visitors</div>
-            <div class="stat-value" id="s-unique">—</div>
-            <div class="stat-sub">distinct IPs</div>
-          </div>
-          <div class="stat-card stat-rose">
-            <div class="stat-label">Total Likes</div>
-            <div class="stat-value" id="s-total-likes">—</div>
-            <div class="stat-sub" id="s-today-likes">— today</div>
-          </div>
-          <div class="stat-card stat-green">
-            <div class="stat-label">Like Rate</div>
-            <div class="stat-value" id="s-like-rate">—</div>
-            <div class="stat-sub">likes / 100 visits</div>
-          </div>
-        </div>
+    <!-- ── Log feed ─────────────────────────────────────────────── -->
+    <div class="log-header">
+      <span class="dim">timestamp (UTC)      </span>
+      <span class="dim">type     </span>
+      <span class="dim">hash         </span>
+      <span class="dim">details</span>
+    </div>
+    <div id="log-feed" class="log-feed"></div>
 
-        <!-- Recent activity side by side -->
-        <div class="dual-tables">
-          <div class="table-card">
-            <div class="table-header">
-              <span class="table-title">🕐 Recent Visitors</span>
-              <span class="table-count" id="ov-visit-count"></span>
-            </div>
-            <div class="table-wrap">
-              <table class="data-table">
-                <thead><tr><th>IP Address</th><th>Browser</th><th>Time (UTC)</th></tr></thead>
-                <tbody id="ov-visits-body"></tbody>
-              </table>
-            </div>
-          </div>
-          <div class="table-card">
-            <div class="table-header">
-              <span class="table-title">❤️ Recent Likes</span>
-              <span class="table-count" id="ov-like-count"></span>
-            </div>
-            <div class="table-wrap">
-              <table class="data-table">
-                <thead><tr><th>IP Address</th><th>Time (UTC)</th></tr></thead>
-                <tbody id="ov-likes-body"></tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ── Visitors tab ──────────────────────────────────────────── -->
-      <div id="tab-visitors" class="tab-content" style="display:none">
-        <div class="table-card table-card-full">
-          <div class="table-header">
-            <span class="table-title">👀 All Recent Visitors</span>
-            <span class="table-count" id="vis-count"></span>
-          </div>
-          <div class="table-wrap">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th class="col-id">#</th>
-                  <th>IP Address</th>
-                  <th>Browser / OS</th>
-                  <th>Visited (UTC)</th>
-                </tr>
-              </thead>
-              <tbody id="vis-body"></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <!-- ── Likes tab ─────────────────────────────────────────────── -->
-      <div id="tab-likes" class="tab-content" style="display:none">
-        <div class="table-card table-card-full">
-          <div class="table-header">
-            <span class="table-title">❤️ All Recent Likes</span>
-            <span class="table-count" id="like-count"></span>
-          </div>
-          <div class="table-wrap">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th class="col-id">#</th>
-                  <th>IP Address</th>
-                  <th>Liked At (UTC)</th>
-                </tr>
-              </thead>
-              <tbody id="like-body"></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-    </div><!-- /.main -->
-  </div><!-- /.root -->
-
+  </div>
   <script src="/dashboard.js"></script>
 </body>
 </html>

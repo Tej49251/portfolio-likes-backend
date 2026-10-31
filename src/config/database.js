@@ -5,8 +5,9 @@
  * Schema is idempotent — safe to run on every cold start.
  *
  * Tables:
- *   visits    – one row per page visit (ip, user_agent_hint, visited_at)
- *   likes_log – one row per like click (ip, liked_at)
+ *   visits        – one row per page visit (hashed IP, browser, OS, screen, referrer, timezone)
+ *   section_views – one row per section scroll event
+ *   likes_log     – one row per like click (hashed IP)
  */
 
 'use strict';
@@ -23,7 +24,7 @@ export function getPool() {
   if (!pool) {
     pool = new Pool({
       connectionString: config.databaseUrl,
-      ssl: { rejectUnauthorized: false }, // Required for Neon's SSL proxy
+      ssl: { rejectUnauthorized: false },
       max: 5,
       idleTimeoutMillis: 20_000,
       connectionTimeoutMillis: 8_000,
@@ -41,24 +42,38 @@ export async function initializeSchema() {
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS visits (
-      id            SERIAL PRIMARY KEY,
-      ip            TEXT        NOT NULL,
-      user_agent    TEXT,
-      visited_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      id          SERIAL PRIMARY KEY,
+      ip_hash     TEXT        NOT NULL,
+      browser     TEXT,
+      os          TEXT,
+      screen_size TEXT,
+      referrer    TEXT,
+      timezone    TEXT,
+      visited_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS section_views (
+      id         SERIAL PRIMARY KEY,
+      ip_hash    TEXT        NOT NULL,
+      section    TEXT        NOT NULL,
+      viewed_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS likes_log (
-      id            SERIAL PRIMARY KEY,
-      ip            TEXT        NOT NULL,
-      liked_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      id        SERIAL PRIMARY KEY,
+      ip_hash   TEXT        NOT NULL,
+      liked_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
 
   // Indexes for fast dashboard queries
-  await db.query(`CREATE INDEX IF NOT EXISTS idx_visits_at    ON visits    (visited_at DESC)`);
-  await db.query(`CREATE INDEX IF NOT EXISTS idx_likes_at     ON likes_log (liked_at   DESC)`);
+  await db.query(`CREATE INDEX IF NOT EXISTS idx_visits_at   ON visits        (visited_at DESC)`);
+  await db.query(`CREATE INDEX IF NOT EXISTS idx_sections_at ON section_views (viewed_at  DESC)`);
+  await db.query(`CREATE INDEX IF NOT EXISTS idx_likes_at    ON likes_log     (liked_at   DESC)`);
 
   logger.info('Database schema initialized');
 }
