@@ -43,7 +43,7 @@ export async function initializeSchema() {
   await db.query(`
     CREATE TABLE IF NOT EXISTS visits (
       id          SERIAL PRIMARY KEY,
-      ip_hash     TEXT        NOT NULL,
+      ip_hash     TEXT        NOT NULL DEFAULT 'unknown',
       browser     TEXT,
       os          TEXT,
       screen_size TEXT,
@@ -52,6 +52,21 @@ export async function initializeSchema() {
       visited_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+
+  // ── Migration: add new columns to existing visits table ───────────────────
+  const visitMigrations = [
+    `ALTER TABLE visits ADD COLUMN IF NOT EXISTS ip_hash     TEXT`,
+    `ALTER TABLE visits ADD COLUMN IF NOT EXISTS browser     TEXT`,
+    `ALTER TABLE visits ADD COLUMN IF NOT EXISTS os          TEXT`,
+    `ALTER TABLE visits ADD COLUMN IF NOT EXISTS screen_size TEXT`,
+    `ALTER TABLE visits ADD COLUMN IF NOT EXISTS referrer    TEXT`,
+    `ALTER TABLE visits ADD COLUMN IF NOT EXISTS timezone    TEXT`,
+    // If old 'ip' column exists, copy its value to ip_hash where ip_hash is null
+    `UPDATE visits SET ip_hash = COALESCE(ip_hash, ip::TEXT, 'legacy') WHERE ip_hash IS NULL OR ip_hash = ''`,
+  ];
+  for (const sql of visitMigrations) {
+    await db.query(sql).catch(() => {}); // ignore errors (column may already exist)
+  }
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS section_views (
@@ -65,10 +80,16 @@ export async function initializeSchema() {
   await db.query(`
     CREATE TABLE IF NOT EXISTS likes_log (
       id        SERIAL PRIMARY KEY,
-      ip_hash   TEXT        NOT NULL,
+      ip_hash   TEXT        NOT NULL DEFAULT 'unknown',
       liked_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+
+  // ── Migration: add ip_hash to existing likes_log ──────────────────────────
+  await db.query(`ALTER TABLE likes_log ADD COLUMN IF NOT EXISTS ip_hash TEXT`)
+    .catch(() => {});
+  await db.query(`UPDATE likes_log SET ip_hash = COALESCE(ip_hash, ip::TEXT, 'legacy') WHERE ip_hash IS NULL OR ip_hash = ''`)
+    .catch(() => {});
 
   // Indexes for fast dashboard queries
   await db.query(`CREATE INDEX IF NOT EXISTS idx_visits_at   ON visits        (visited_at DESC)`);
